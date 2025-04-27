@@ -1,50 +1,68 @@
 ﻿import streamlit as st
 import pandas as pd
-import plotly.express as px
 from prophet import Prophet
 from prophet.plot import plot_plotly
-from utils.data_loader import load_data
 
-st.title("Прогноз пассажиропотока на 6 месяцев")
+def run(df: pd.DataFrame):
+    """
+    Прогноз пассажиропотока на 6 месяцев вперёд с помощью Prophet.
 
-df = load_data()
-
-if df is not None and not df.empty:
-    df_monthly = df.groupby(df['dep_date'].dt.to_period('M'))['passengers'].sum().reset_index()
-    df_monthly['ds'] = df_monthly['dep_date'].dt.to_timestamp()
-    df_monthly['y'] = df_monthly['passengers']
-
-    model = Prophet(
-        yearly_seasonality=True,
-        weekly_seasonality=False,
-        daily_seasonality=False
+    Даст вам:
+    - Тренд и сезонность
+    - Таблицу с месячным прогнозом
+    - Интерпретации для бизнеса
+    """
+    st.header("🔮 Прогноз пассажиропотока на 6 месяцев")
+    st.markdown(
+        """
+        Прогноз позволяет заранее распределить:
+        - Закупку топлива и наземные ресурсы  
+        - Графики работы экипажа  
+        - Маркетинговые акции в низкие сезоны  
+        """
     )
-    model.fit(df_monthly[['ds', 'y']])
 
-    future = model.make_future_dataframe(periods=6, freq='M')
-    forecast = model.predict(future)
+    # Подготовка исторических данных по месяцам
+    hist = df.groupby(df.dep_date.dt.to_period("M"))["passengers"] \
+        .sum().reset_index(name="y")
+    hist["ds"] = hist.dep_date.dt.to_timestamp()
 
-    st.subheader("График прогноза пассажиропотока")
-    fig = plot_plotly(model, forecast)
-    st.plotly_chart(fig, use_container_width=True)
+    # Обучаем модель
+    m = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
+    m.fit(hist[["ds", "y"]])
 
-    st.subheader("Компоненты прогноза")
-    components_fig = model.plot_components(forecast)
-    st.pyplot(components_fig)
+    # Будущее на 6 месяцев
+    future = m.make_future_dataframe(periods=6, freq="M")
+    forecast = m.predict(future)
 
-    st.subheader("Таблица прогноза на ближайшие 6 месяцев")
-    future_data = forecast[['ds', 'yhat']].tail(6)
-    future_data.columns = ["Месяц", "Прогноз пассажиров"]
-    future_data["Месяц"] = future_data["Месяц"].dt.strftime("%B %Y")
-    st.dataframe(future_data.style.format({"Прогноз пассажиров": "{:,.0f}"}))
+    # График
+    fig1 = plot_plotly(m, forecast)
+    st.plotly_chart(fig1, use_container_width=True)
+
+    # Компоненты (тренд + сезонность)
+    comp = m.plot_components(forecast)
+    st.pyplot(comp)
+
+    # Таблица прогноза
+    next6 = (forecast[["ds", "yhat"]]
+             .tail(6)
+             .rename(columns={"ds": "Месяц", "yhat": "Прогноз пассажиров"})
+             )
+    # Обрезаем всё, что ниже нуля, а потом округляем и переводим в int
+    next6["Прогноз пассажиров"] = (
+        next6["Прогноз пассажиров"]
+        .clip(lower=0)
+        .round(0)
+        .astype(int)
+    )
+    st.markdown("**Прогноз по месяцам (неотрицательный):**")
+    st.dataframe(next6.set_index("Месяц"))
 
     st.markdown(
         """
-        **Интерпретация:**
-        - Рост графика указывает на увеличение пассажиропотока.
-        - Спад может говорить о сезонных колебаниях.
-        - Выявление трендов помогает планировать загрузку рейсов и маркетинговые активности.
+        **Как применять**:  
+        - Сравните прогноз с прошлогодними результатами, чтобы скорректировать планы.  
+        - Используйте тренд для долговременных стратегий.  
+        - Сезонность поможет планировать рекламные кампании заранее.
         """
     )
-else:
-    st.error("Данные для построения прогноза отсутствуют.")

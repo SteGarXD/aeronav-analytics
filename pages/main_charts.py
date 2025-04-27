@@ -1,42 +1,70 @@
 ﻿import streamlit as st
-from utils.data_loader import load_data
-from utils.charts import render_chart
+import pandas as pd
+import plotly.express as px
 
-st.title("Основные диаграммы: Анализ системы отправки рейсов")
 
-df = load_data()
+def run(df: pd.DataFrame):
+    """
+    Раздел «Основные диаграммы»:
+    - Топ-5 авиакомпаний
+    - Топ-5 направлений (рейсов)
+    - Топ-5 аэропортов
+    - Договоры (круговая и столбчатая диаграмма)
 
-if df is not None and not df.empty:
+    Помогает быстро определить:
+    • Где мы зарабатываем больше всего пассажиров.
+    • По каким договорам (или без договора) лётные программы наиболее крупные.
+    """
+    st.header("Анализ данных системы отправки рейсов")
+    st.markdown(
+        """
+        В этом разделе вы видите пять лидеров по основным бизнес-метрикам:
+        - 🛫 авиакомпании с наибольшим пассажиропотоком  
+        - 🌐 самые популярные направления  
+        - 🏁 аэропорты с наибольшим пассажиропотоком  
+        - 📄 распределение по договорным партнёрам  
+
+        Выбор дат позволяет оценить динамику за любой период.
+        """
+    )
+
+    # Настройка дат
+    c1, c2 = st.columns(2)
+    with c1:
+        start = st.date_input("Дата начала", df["dep_date"].min(), key="mc_start")
+    with c2:
+        end = st.date_input("Дата окончания", df["dep_date"].max(), key="mc_end")
+
+    mask = (df["dep_date"] >= pd.to_datetime(start)) & (df["dep_date"] <= pd.to_datetime(end))
+    df_f = df.loc[mask]
+
+    if df_f.empty:
+        st.warning("Нет данных за выбранный период")
+        return
+
     charts = [
-        ("Топ‑5 авиакомпаний", "airline", "bar"),
-        ("Топ‑5 направлений", "flight_no", "bar"),
-        ("Топ‑5 аэропортов", "airport", "bar"),
-        ("Договоры (круговая диаграмма)", "contract_short", "pie"),
-        ("Договоры (столбчатая диаграмма)", "contract_short", "bar"),
+        ("Топ-5 авиакомпаний", "airline", "bar"),
+        ("Топ-5 направлений", "flight_no", "bar"),
+        ("Топ-5 аэропортов", "airport", "bar"),
+        ("Договоры: круговая", "contract_short", "pie"),
+        ("Договоры: столбчатая", "contract_short", "bar"),
     ]
 
-    for i, (title, column, kind) in enumerate(charts):
+    for title, col, kind in charts:
         st.subheader(title)
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            start_date = st.date_input(
-                "Дата начала",
-                value=df["dep_date"].min(),
-                key=f"start_date_main_{i}"
+        # агрегируем
+        agg = df_f.groupby(col)["passengers"].sum().reset_index(name="value")
+        top5 = agg.nlargest(5, "value")
+        if kind == "pie":
+            fig = px.pie(
+                top5, names=col, values="value", hole=0.3,
+                title=title,
+                labels={col: title, "value": "Пассажиры"}
             )
-
-        with col2:
-            end_date = st.date_input(
-                "Дата окончания",
-                value=df["dep_date"].max(),
-                key=f"end_date_main_{i}"
+        else:
+            fig = px.bar(
+                top5, x="value", y=col, orientation="h",
+                title=title,
+                labels={"value": "Пассажиры", col: title}
             )
-
-        mask = (df['dep_date'] >= pd.to_datetime(start_date)) & (df['dep_date'] <= pd.to_datetime(end_date))
-        df_filtered = df.loc[mask]
-
-        st.plotly_chart(render_chart(df_filtered, column, title, kind=kind, showlegend=(kind == "pie")), use_container_width=True)
-else:
-    st.error("Не удалось загрузить данные.")
+        st.plotly_chart(fig, use_container_width=True)
