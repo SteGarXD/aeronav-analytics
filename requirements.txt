@@ -55,7 +55,7 @@ python-dateutil==2.9.0.post0
 python-decouple==3.8
 pytz==2025.2
 pytz-deprecation-shim==0.1.0.post0
-pywin32==310
+pywin32==310; sys_platform == "win32"
 referencing==0.36.2
 requests==2.32.3
 rich==13.9.4
